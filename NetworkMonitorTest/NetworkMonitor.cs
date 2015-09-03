@@ -92,21 +92,20 @@ namespace NetworkMonitoring
          {
             if( !IsMonitoring )
             {
+               MonitorTimer = MakeTimer( monitorUpdateFrequency_ms );
+               MonitorTimer.Start();
+
                Request = WebRequest.Create( MonitoredUri ) as HttpWebRequest;
                if( Request != null )
                {
-                  HttpWebResponse response = Request.GetResponse() as HttpWebResponse;
+                  if( MonitoringStarted != null )
+                     MonitoringStarted.Invoke( this, new EventArgs() );
 
-                  result = IsMonitoring = response != null;
+                  HttpWebResponse response;
+                  result = IsMonitoring = TryGetResponse( Request, out response );
                }
             }
          }
-
-         MonitorTimer = MakeTimer( monitorUpdateFrequency_ms );
-         MonitorTimer.Start();
-
-         if( MonitoringStarted != null )
-            MonitoringStarted.Invoke( this, new EventArgs() );
 
          return result;
       }
@@ -132,6 +131,37 @@ namespace NetworkMonitoring
          return result;
       }
 
+      protected Boolean TryGetResponse( HttpWebRequest request, out HttpWebResponse response )
+      {
+         Boolean result;
+
+         Boolean responseRecieved = false;
+         HttpWebResponse receivedResponse = null;
+
+         try
+         {
+            receivedResponse = Request.GetResponse() as HttpWebResponse;
+            responseRecieved = true;
+         }
+         catch( ProtocolViolationException )
+         {
+         }
+         catch( WebException )
+         {
+         }
+         catch( InvalidOperationException )
+         {
+         }
+         catch( NotSupportedException )
+         {
+         }
+
+         result = responseRecieved && receivedResponse != null;
+         response = receivedResponse;
+
+         return result;
+      }
+
       protected Timer MonitorTimer
       {
          get;
@@ -150,9 +180,10 @@ namespace NetworkMonitoring
 
       protected virtual void MonitorTimer_Elapsed( Object sender, ElapsedEventArgs e )
       {
-         HttpWebResponse response = Request.GetResponse() as HttpWebResponse;
+         HttpWebResponse response;
+         TryGetResponse( Request, out response );
 
-         if( response != null && Updated != null )
+         if( Updated != null )
             Updated.Invoke( this, new NetworkMonitorEventArgs( response ) );
       }
 
@@ -173,6 +204,13 @@ namespace NetworkMonitoring
       public NetworkMonitorEventArgs( HttpWebResponse response )
       {
          Response = response;
+         ReceivedResponse = response != null;
+      }
+
+      public Boolean ReceivedResponse
+      {
+         get;
+         protected set;
       }
 
       public HttpWebResponse Response

@@ -51,7 +51,13 @@ namespace NetworkMonitorTest
       {
          DateTime now = DateTime.Now;
 
-         Console.Out.WriteLine( String.Format( "{0}: Monitoring {1} updated. Response status: {2} ({3})", now.ToString(), sender.MonitoredUri.AbsoluteUri, args.Response.StatusCode, Convert.ToUInt16( args.Response.StatusCode ) ) );
+         String message;
+         if( args.ReceivedResponse )
+            message = String.Format( "{0}: Monitoring {1} updated. Response status: {2} ({3})", now.ToString(), sender.MonitoredUri.AbsoluteUri, args.Response.StatusCode, Convert.ToUInt16( args.Response.StatusCode ) );
+         else
+            message = String.Format( "{0}: Monitoring {1} updated. Response not received.", now.ToString(), sender.MonitoredUri.AbsoluteUri );
+
+         Console.Out.WriteLine( message );
       }
    }
 }
