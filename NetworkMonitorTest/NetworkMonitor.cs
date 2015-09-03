@@ -92,10 +92,13 @@ namespace NetworkMonitoring
          {
             if( !IsMonitoring )
             {
-               Request = WebRequest.CreateHttp( MonitoredUri );
-               HttpWebResponse response = Request.GetResponse() as HttpWebResponse;
+               Request = WebRequest.Create( MonitoredUri ) as HttpWebRequest;
+               if( Request != null )
+               {
+                  HttpWebResponse response = Request.GetResponse() as HttpWebResponse;
 
-               result = IsMonitoring = response != null;
+                  result = IsMonitoring = response != null;
+               }
             }
          }
 
