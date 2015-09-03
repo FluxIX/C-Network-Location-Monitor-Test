@@ -39,10 +39,15 @@ namespace NetworkMonitoring
 
          protected set
          {
-            if( value != null )
-               monitoredUri = value;
+            if( !IsMonitoring )
+            {
+               if( value != null )
+                  monitoredUri = value;
+               else
+                  throw new ArgumentNullException( "value", "Monitored URI cannot be null." );
+            }
             else
-               throw new ArgumentNullException( "value", "Monitored URI cannot be null." );
+               throw new InvalidOperationException( "Cannot change the monitored URI when monitoring." );
          }
       }
 
@@ -184,7 +189,7 @@ namespace NetworkMonitoring
          TryGetResponse( Request, out response );
 
          if( Updated != null )
-            Updated.Invoke( this, new NetworkMonitorEventArgs( response ) );
+            Updated.Invoke( this, new NetworkMonitorEventArgs( MonitoredUri, response ) );
       }
 
       #region IDisposable Members
@@ -201,10 +206,17 @@ namespace NetworkMonitoring
 
    public class NetworkMonitorEventArgs : EventArgs
    {
-      public NetworkMonitorEventArgs( HttpWebResponse response )
+      public NetworkMonitorEventArgs( Uri identifier, HttpWebResponse response )
       {
+         Identifier = identifier;
          Response = response;
          ReceivedResponse = response != null;
+      }
+
+      public Uri Identifier
+      {
+         get;
+         protected set;
       }
 
       public Boolean ReceivedResponse
