@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Net;
+using System.Net.Cache;
 using System.Timers;
 
 namespace NetworkMonitoring
@@ -100,7 +101,7 @@ namespace NetworkMonitoring
                MonitorTimer = MakeTimer( monitorUpdateFrequency_ms );
                MonitorTimer.Start();
 
-               Request = WebRequest.Create( MonitoredUri ) as HttpWebRequest;
+               Request = CreateWebRequest( MonitoredUri );
                if( Request != null )
                {
                   if( MonitoringStarted != null )
@@ -136,16 +137,43 @@ namespace NetworkMonitoring
          return result;
       }
 
+      public const HttpRequestCacheLevel DefaultRequestCacheLevel = HttpRequestCacheLevel.NoCacheNoStore;
+
+      protected HttpWebRequest CreateWebRequest( Uri uri, HttpRequestCacheLevel cacheLevel = DefaultRequestCacheLevel )
+      {
+         HttpWebRequest result = WebRequest.Create( uri ) as HttpWebRequest;
+
+         if( result != null )
+         {
+            HttpRequestCachePolicy cachePolicy = new HttpRequestCachePolicy( cacheLevel );
+            result.CachePolicy = cachePolicy;
+         }
+
+         return result;
+      }
+
       protected Boolean TryGetResponse( HttpWebRequest request, out HttpWebResponse response )
+      {
+         DateTime requestTimestamp;
+         DateTime? responseTimestamp;
+
+         return TryGetResponse( request, out response, out requestTimestamp, out responseTimestamp );
+      }
+
+      protected Boolean TryGetResponse( HttpWebRequest request, out HttpWebResponse response, out DateTime requestTimestamp, out DateTime? responseTimestamp )
       {
          Boolean result;
 
          Boolean responseRecieved = false;
          HttpWebResponse receivedResponse = null;
+         DateTime? responseTime = null;
+
+         requestTimestamp = DateTime.Now;
 
          try
          {
-            receivedResponse = Request.GetResponse() as HttpWebResponse;
+            receivedResponse = request.GetResponse() as HttpWebResponse;
+            responseTime = DateTime.Now;
             responseRecieved = true;
          }
          catch( ProtocolViolationException )
@@ -161,8 +189,10 @@ namespace NetworkMonitoring
          {
          }
 
-         result = responseRecieved && receivedResponse != null;
+         if( result = responseRecieved && receivedResponse != null )
+            receivedResponse.Close();
          response = receivedResponse;
+         responseTimestamp = responseTime;
 
          return result;
       }
@@ -183,13 +213,34 @@ namespace NetworkMonitoring
          return result;
       }
 
+      protected Object requestLock = new Object();
+
+      public Boolean IsRequesting
+      {
+         get;
+         protected set;
+      }
+
       protected virtual void MonitorTimer_Elapsed( Object sender, ElapsedEventArgs e )
       {
-         HttpWebResponse response;
-         TryGetResponse( Request, out response );
+         if( !IsRequesting )
+         {
+            HttpWebResponse response;
+            DateTime requestTimestamp;
+            DateTime? responseTimestamp;
 
-         if( Updated != null )
-            Updated.Invoke( this, new NetworkMonitorEventArgs( MonitoredUri, response ) );
+            lock( requestLock )
+            {
+               IsRequesting = true;
+
+               TryGetResponse( ( Request = CreateWebRequest( MonitoredUri ) ), out response, out requestTimestamp, out responseTimestamp );
+
+               IsRequesting = false;
+            }
+
+            if( Updated != null )
+               Updated.Invoke( this, new NetworkMonitorEventArgs( requestTimestamp, responseTimestamp, MonitoredUri, response ) );
+         }
       }
 
       #region IDisposable Members
@@ -206,11 +257,46 @@ namespace NetworkMonitoring
 
    public class NetworkMonitorEventArgs : EventArgs
    {
-      public NetworkMonitorEventArgs( Uri identifier, HttpWebResponse response )
+      public NetworkMonitorEventArgs( DateTime requestTimestamp, DateTime? responseTimestamp, Uri identifier, HttpWebResponse response )
       {
+         RequestTimestamp = requestTimestamp;
+         ResponseTimestamp = responseTimestamp;
          Identifier = identifier;
          Response = response;
-         ReceivedResponse = response != null;
+      }
+
+      public DateTime RequestTimestamp
+      {
+         get;
+         protected set;
+      }
+
+      public DateTime? ResponseTimestamp
+      {
+         get;
+         protected set;
+      }
+
+      public Boolean HasResponseTimestamp
+      {
+         get
+         {
+            return ResponseTimestamp != null;
+         }
+      }
+
+      public TimeSpan RequestDuration
+      {
+         get
+         {
+            if( HasResponseTimestamp )
+            {
+               TimeSpan result = ( ( DateTime ) ResponseTimestamp ) - RequestTimestamp;
+               return result;
+            }
+            else
+               throw new InvalidOperationException( "No response timestamp present." );
+         }
       }
 
       public Uri Identifier
@@ -221,8 +307,10 @@ namespace NetworkMonitoring
 
       public Boolean ReceivedResponse
       {
-         get;
-         protected set;
+         get
+         {
+            return Response != null;
+         }
       }
 
       public HttpWebResponse Response
