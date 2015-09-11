@@ -9,12 +9,16 @@ namespace NetworkMonitoring
    {
       #region Events
       #region Delegates
+      public delegate void MonitoringStartingDelegate( NetworkMonitor sender, EventArgs args );
       public delegate void MonitoringStartedDelegate( NetworkMonitor sender, EventArgs args );
+      public delegate void MonitoringStartFailedDelegate( NetworkMonitor sender, EventArgs args );
       public delegate void UpdatedDelegate( NetworkMonitor sender, NetworkMonitorEventArgs args );
       public delegate void MonitoringStoppedDelegate( NetworkMonitor sender, EventArgs args );
       #endregion
 
+      public event MonitoringStartingDelegate MonitoringStarting;
       public event MonitoringStartedDelegate MonitoringStarted;
+      public event MonitoringStartFailedDelegate MonitoringStartFailed;
       public event UpdatedDelegate Updated;
       public event MonitoringStoppedDelegate MonitoringStopped;
       #endregion
@@ -104,11 +108,25 @@ namespace NetworkMonitoring
                Request = CreateWebRequest( MonitoredUri );
                if( Request != null )
                {
-                  if( MonitoringStarted != null )
-                     MonitoringStarted.Invoke( this, new EventArgs() );
+                  if( MonitoringStarting != null )
+                     MonitoringStarting.Invoke( this, new EventArgs() );
 
                   HttpWebResponse response;
-                  result = IsMonitoring = TryGetResponse( Request, out response );
+                  DateTime requestTimestamp;
+                  DateTime? responseTimestamp;
+                  if( result = IsMonitoring = TryGetResponse( Request, out response, out requestTimestamp, out responseTimestamp ) )
+                  {
+                     if( MonitoringStarted != null )
+                        MonitoringStarted.Invoke( this, new EventArgs() );
+
+                     if( Updated != null )
+                        Updated.Invoke( this, new NetworkMonitorEventArgs( requestTimestamp, responseTimestamp, MonitoredUri, response ) );
+                  }
+                  else
+                  {
+                     if( MonitoringStartFailed != null )
+                        MonitoringStartFailed.Invoke( this, new EventArgs() );
+                  }
                }
             }
          }
